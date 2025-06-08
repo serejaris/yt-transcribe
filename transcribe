@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Video Transcriber - executable wrapper
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Check if virtual environment exists
+if [ ! -d "$SCRIPT_DIR/venv" ]; then
+    echo "❌ Virtual environment not found!"
+    echo "📦 Creating virtual environment..."
+    python3 -m venv "$SCRIPT_DIR/venv"
+    
+    echo "📥 Installing dependencies..."
+    "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip >/dev/null 2>&1
+    "$SCRIPT_DIR/venv/bin/pip" install yt-dlp >/dev/null 2>&1
+    "$SCRIPT_DIR/venv/bin/pip" install torch --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1
+    "$SCRIPT_DIR/venv/bin/pip" install git+https://github.com/openai/whisper.git >/dev/null 2>&1
+    "$SCRIPT_DIR/venv/bin/pip" install ffmpeg-python >/dev/null 2>&1
+    echo "✅ Dependencies installed!"
+fi
+
+# Check if ffmpeg is installed
+if ! command -v ffmpeg &> /dev/null; then
+    echo "❌ ffmpeg is not installed!"
+    echo "Please install it first:"
+    echo "  Mac: brew install ffmpeg"
+    echo "  Linux: sudo apt install ffmpeg"
+    exit 1
+fi
+
+# Run the transcriber with all arguments
+"$SCRIPT_DIR/venv/bin/python" "$SCRIPT_DIR/transcribe.py" "$@"
