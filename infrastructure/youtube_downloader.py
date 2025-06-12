@@ -8,8 +8,10 @@ import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Callable, List
 import logging
+
+from infrastructure.rich_console_progress import get_active_rich_progress
 
 import yt_dlp
 
@@ -57,6 +59,8 @@ class YouTubeDownloader:
         self.format_preference = format_preference
         self.quiet = quiet
         self._ydl_opts = self._create_ydl_options()
+        # Prepare progress integration (task id created lazily)
+        self._rich_task_id: int | None = None
     
     def _create_ydl_options(self) -> dict[str, Any]:
         """Create yt-dlp options dictionary."""
@@ -68,6 +72,7 @@ class YouTubeDownloader:
             'no_check_certificate': True,
             'prefer_ffmpeg': True,
             'keepvideo': False,
+            'progress_hooks': [self._progress_hook],
         }
         
         if self.audio_only:
@@ -224,6 +229,44 @@ class YouTubeDownloader:
             filename = filename[:max_length]
         
         return filename.strip()
+
+
+    # ------------------------------------------------------------------
+    # yt-dlp progress → Rich bridge
+    # ------------------------------------------------------------------
+    def _ensure_rich_task(self, total_bytes: int | None) -> None:
+        from rich.progress import Progress  # local import
+
+        if self._rich_task_id is not None:
+            return
+
+        progress = get_active_rich_progress()
+        if progress is None or total_bytes is None:
+            return  # nothing to do
+
+        # Reuse existing task if it exists
+        if self._rich_task_id is not None and self._rich_task_id in progress.task_ids:
+            return
+
+        self._rich_task_id = progress.add_task(
+            "Downloading",
+            total=total_bytes,
+            stage="Download",
+        )
+
+    def _progress_hook(self, d: dict[str, Any]) -> None:  # callback from yt-dlp
+        if d.get('status') == 'downloading':
+            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+            downloaded = d.get('downloaded_bytes')
+            self._ensure_rich_task(total_bytes)
+
+            progress = get_active_rich_progress()
+            if progress is not None and self._rich_task_id is not None and total_bytes:
+                progress.update(self._rich_task_id, completed=downloaded)
+        elif d.get('status') == 'finished':
+            progress = get_active_rich_progress()
+            if progress is not None and self._rich_task_id is not None:
+                progress.update(self._rich_task_id, completed=progress.tasks[self._rich_task_id].total)
 
 
 class CachedYouTubeDownloader(YouTubeDownloader):

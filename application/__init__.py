@@ -7,8 +7,8 @@ the transcription workflow using domain interfaces.
 from application.service import (
     TranscriptionService,
     SimpleFileStorage,
-    TempFileCleanup,
-    ConsoleProgress,
+    TempFileCleanup as TempFileCleanup,
+    ConsoleProgress as ConsoleProgress,
 )
 
 __all__ = [

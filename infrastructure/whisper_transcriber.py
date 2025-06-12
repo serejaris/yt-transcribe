@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 import logging
+from functools import wraps
 
 import whisper
 import torch
@@ -85,6 +86,8 @@ class WhisperTranscriber:
     
     def _load_model(self) -> whisper.Whisper:
         """Load Whisper model lazily."""
+        # Ensure tqdm progress bars are silenced to avoid conflicting CLI output
+        self._patch_whisper_tqdm()
         if self._model is None:
             logger.info(f"Loading Whisper model: {self.model_size}")
             self._model = whisper.load_model(
@@ -93,6 +96,65 @@ class WhisperTranscriber:
                 download_root=str(self.download_root) if self.download_root else None
             )
         return self._model
+    
+    _tqdm_patched: bool = False
+
+    def _patch_whisper_tqdm(self) -> None:
+        """Patch Whisper's internal tqdm to disable native progress bars.
+
+        This prevents stdout clutter when Rich progress bars are used.
+        The patch is idempotent and affects only the current process.
+        """
+        if self.__class__._tqdm_patched:
+            return
+
+        try:
+            import whisper.utils as wutils  # type: ignore
+            from tqdm import tqdm as _orig_tqdm  # noqa: N811 (alias)
+
+            # Try to integrate with Rich
+            from infrastructure.rich_console_progress import (
+                get_active_rich_progress,
+            )
+
+            rich_progress = get_active_rich_progress()
+
+            if rich_progress is None:
+                # Fallback: silent wrapper (no Rich running)
+                def _silent(*a, **kw):  # type: ignore[override]
+                    kw.setdefault("disable", True)
+                    return _orig_tqdm(*a, **kw)
+
+                wutils.tqdm = _silent  # type: ignore[assignment]
+                logger.debug("Patched whisper tqdm -> silent")
+            else:
+                # Create a tqdm subclass that forwards updates to Rich
+                def _rich_tqdm(*a, **kw):  # type: ignore[override]
+                    total = kw.get("total") or (a[0].total if a else None)
+
+                    if not hasattr(_rich_tqdm, "_task_id"):
+                        _rich_tqdm._task_id = rich_progress.add_task(
+                            "Transcribe", total=100.0, start=False, stage="Transcribe"
+                        )
+                    task_id = _rich_tqdm._task_id  # type: ignore[attr-defined]
+
+                    class _Bridge(_orig_tqdm):
+                        def update(self, n=1):  # type: ignore[override]
+                            super().update(n)
+                            if total:
+                                pct = 100 * self.n / total
+                                rich_progress.update(task_id, completed=pct)
+
+                    kw["disable"] = True  # fully suppress tqdm output
+                    bar = _Bridge(*a, **kw)
+                    rich_progress.start_task(task_id)
+                    return bar
+
+                wutils.tqdm = _rich_tqdm  # type: ignore[assignment]
+                logger.debug("Patched whisper tqdm -> rich bridge")
+            self.__class__._tqdm_patched = True
+        except Exception as exc:  # pragma: no cover – best-effort patch
+            logger.debug(f"Could not patch whisper tqdm: {exc}")
     
     def get_available_models(self) -> list[str]:
         """Get list of available Whisper models."""

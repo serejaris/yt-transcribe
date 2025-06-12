@@ -278,21 +278,27 @@ class TempFileCleanup:
             )
 
 
-class ConsoleProgress:
-    """Console progress callback implementation."""
+class SimpleConsoleProgress:
+    """Fallback console progress using ASCII bar."""
     
     def __call__(
         self,
         stage: str,
         progress: float,
-        message: str = ""
+        message: str = "",
     ) -> None:
-        """Print progress to console."""
         bar_length = 30
         filled = int(bar_length * progress / 100)
         bar = "█" * filled + "░" * (bar_length - filled)
-        
-        print(f"\r{stage.capitalize()}: [{bar}] {progress:.1f}% {message}", end="")
-        
+
+        print(
+            f"\r{stage.capitalize()}: [{bar}] {progress:.1f}% {message}",
+            end="",
+            flush=True,
+        )
+
         if progress >= 100:
-            print()  # New line when complete
+            print()
+
+# Backward-compat alias
+ConsoleProgress = SimpleConsoleProgress

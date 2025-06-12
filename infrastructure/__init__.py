@@ -13,6 +13,7 @@ from infrastructure.whisper_transcriber import (
     FasterWhisperTranscriber,
     BatchWhisperTranscriber,
 )
+from infrastructure.rich_console_progress import RichConsoleProgress
 
 __all__ = [
     # Downloaders
@@ -22,4 +23,6 @@ __all__ = [
     "WhisperTranscriber",
     "FasterWhisperTranscriber",
     "BatchWhisperTranscriber",
+    # CLI UX
+    "RichConsoleProgress",
 ]

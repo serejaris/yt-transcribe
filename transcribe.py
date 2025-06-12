@@ -12,14 +12,13 @@ from pathlib import Path
 from typing import Optional
 
 from domain import TranscriptionOptions
-from infrastructure import YouTubeDownloader, WhisperTranscriber
+from infrastructure import YouTubeDownloader, WhisperTranscriber, RichConsoleProgress
 from application import (
     TranscriptionService,
     SimpleFileStorage,
     TempFileCleanup,
-    ConsoleProgress
 )
-from application.service import SimpleFileStorage as Storage  # For accessing formatter
+from application.service import SimpleFileStorage as Storage, SimpleConsoleProgress as _FallbackProgress  # For accessing formatter
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -59,9 +58,14 @@ async def main(url: str, output_name: Optional[str] = None) -> None:
         device=None  # Auto-detect
     )
     
-    storage = SimpleFileStorage(Path.cwd())
+    transcripts_dir = Path.cwd() / "transcripts"
+    storage = SimpleFileStorage(transcripts_dir)
     cleanup = TempFileCleanup()
-    progress = ConsoleProgress()
+    # Prefer rich progress if available, else fallback to simple
+    try:
+        progress = RichConsoleProgress()  # type: ignore[assignment]
+    except Exception:
+        progress = _FallbackProgress()  # noqa: S110
     
     # Create service with injected dependencies
     service = TranscriptionService(
@@ -99,11 +103,7 @@ async def main(url: str, output_name: Optional[str] = None) -> None:
         if progress:
             progress("save", 0.0, "Saving transcription...")
         
-        output_path = Path(f"{output_name}.txt")
-        output_path.write_text(
-            storage._format_content(result),  # Use storage formatter
-            encoding='utf-8'
-        )
+        output_path = await storage.save(result, output_name)
         
         if progress:
             progress("save", 100.0, "Save complete")
